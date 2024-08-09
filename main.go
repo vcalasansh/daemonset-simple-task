@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
-	"net/http/fcgi"
 	"os"
 	"time"
 )
@@ -21,14 +19,19 @@ var (
 )
 
 func main() {
-	port := flag.String("port", "9000", "Port to listen on")
+	// Define the port the server will listen on
+	port = *flag.String("port", "9000", "Port to listen on")
 	flag.Parse()
+
+	// Create a new ServeMux and register the /assign handler
 	sm := http.NewServeMux()
 	sm.HandleFunc("/assign", assign)
-	listener, _ := net.Listen("tcp", "127.0.0.1:"+*port)
-	err := fcgi.Serve(listener, sm)
+
+	// Start the HTTP server
+	fmt.Printf("Starting HTTP server on port %s\n", port)
+	err := http.ListenAndServe(":"+port, sm)
 	if err != nil {
-		fmt.Println("Error starting FastCGI server:", err)
+		fmt.Println("Error starting HTTP server:", err)
 	}
 }
 
