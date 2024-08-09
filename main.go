@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-type Input struct {
-	message string `json:"message"`
+type input struct {
+	Message string `json:"message"`
 }
 
 var (
@@ -44,11 +44,11 @@ func assign(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 	fmt.Printf("Received payload: %s\n", string(body))
-	input := new(Input)
+	input := new(input)
 	if err := json.Unmarshal(body, input); err != nil {
 		fmt.Println(err)
 	}
-	message := input.message
+	message := input.Message
 	go func(msg string) {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
