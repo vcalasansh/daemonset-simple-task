@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
 )
 
-type input struct {
+type Input struct {
 	message string `json:"message"`
 }
 
@@ -36,11 +37,18 @@ func main() {
 }
 
 func assign(w http.ResponseWriter, r *http.Request) {
-	// unmarshal the input
-	in := new(input)
-	json.NewDecoder(r.Body).Decode(in)
-	message := in.message
-
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Unable to read request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	fmt.Printf("Received payload: %s\n", string(body))
+	input := new(Input)
+	if err := json.Unmarshal(body, input); err != nil {
+		fmt.Println(err)
+	}
+	message := input.message
 	go func(msg string) {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
