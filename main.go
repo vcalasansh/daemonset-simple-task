@@ -7,26 +7,57 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
-type input struct {
+type StatusCode string
+
+const (
+	StatusCodeSuccess StatusCode = "OK"
+	StatusCodeFailed  StatusCode = "FAILED"
+)
+
+type Input struct {
 	Message string `json:"message"`
 }
 
+type AssignRequest struct {
+	ID   string `json:"id"`
+	Data Input  `json:"data"`
+}
+
+type AssignResponse struct {
+	Status StatusCode `json:"status"`
+	Error  string     `json:"error"`
+}
+
+type RemoveRequest struct {
+	ID string `json:"id"`
+}
+
+type RemoveResponse struct {
+	Status StatusCode `json:"status"`
+	Error  string     `json:"error"`
+}
+
 var (
-	name string = "simple_task_handler"
-	port string
+	name  string = "daemonset-simple-task"
+	port  string
+	tasks map[string](chan bool)
+	lock  sync.Mutex
 )
 
 func main() {
 	// Define the port the server will listen on
+	tasks = make(map[string](chan bool))
 	port = *flag.String("port", "9000", "Port to listen on")
 	flag.Parse()
 
 	// Create a new ServeMux and register the /assign handler
 	sm := http.NewServeMux()
 	sm.HandleFunc("/assign", assign)
+	sm.HandleFunc("/remove", remove)
 
 	// Start the HTTP server
 	fmt.Printf("Starting HTTP server on port %s\n", port)
@@ -39,26 +70,85 @@ func main() {
 func assign(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Unable to read request body", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(&AssignResponse{
+			Status: StatusCodeFailed,
+			Error:  "Unable to read request body",
+		})
 		return
 	}
 	defer r.Body.Close()
 	fmt.Printf("Received payload: %s\n", string(body))
-	input := new(input)
+	input := new(AssignRequest)
 	if err := json.Unmarshal(body, input); err != nil {
-		fmt.Println(err)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(&AssignResponse{
+			Status: StatusCodeFailed,
+			Error:  "Invalid payload",
+		})
+		return
 	}
-	message := input.Message
-	go func(msg string) {
+	quit := make(chan bool)
+	go func(msg string, taskId string) {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			finalMessage := fmt.Sprintf("%s : printed by server %s, running on %s", msg, name, port)
-			writeToFile(finalMessage)
+			select {
+			case <-quit:
+				finalMessage := fmt.Sprintf("Stopping to print the message \"%s\" on server %s. Task will be removed [taskId=%s]", msg, name, taskId)
+				writeToFile(finalMessage)
+				return
+			default:
+				finalMessage := fmt.Sprintf("%s : printed by server %s, running on %s [taskId=%s]", msg, name, port, taskId)
+				writeToFile(finalMessage)
+			}
 		}
-	}(message)
+	}(input.Data.Message, input.ID)
+	lock.Lock()
+	tasks[input.ID] = quit
+	lock.Unlock()
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(&AssignResponse{Status: StatusCodeSuccess})
+}
 
-	fmt.Fprintln(w, "Job started to print message every 10 seconds and call web server.")
+func remove(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(&RemoveResponse{
+			Status: StatusCodeFailed,
+			Error:  "Unable to read request body",
+		})
+		return
+	}
+	defer r.Body.Close()
+	fmt.Printf("Received payload: %s\n", string(body))
+	input := new(RemoveRequest)
+	if err := json.Unmarshal(body, input); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(&RemoveResponse{
+			Status: StatusCodeFailed,
+			Error:  "Invalid payload",
+		})
+		return
+	}
+	quit, ok := tasks[input.ID]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(&RemoveResponse{
+			Status: StatusCodeFailed,
+			Error:  fmt.Sprintf("The task with ID %s does not exist!", input.ID),
+		})
+		return
+	}
+	go func() {
+		quit <- true
+	}()
+	lock.Lock()
+	delete(tasks, input.ID)
+	lock.Unlock()
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(&RemoveResponse{Status: StatusCodeSuccess})
 }
 
 func writeToFile(message string) {
