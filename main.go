@@ -51,7 +51,7 @@ var (
 func main() {
 	// Define the port the server will listen on
 	tasks = make(map[string](chan bool))
-	port = *flag.String("port", "9000", "Port to listen on")
+	flag.StringVar(&port, "port", "9000", "Port to listen on")
 	flag.Parse()
 
 	// Create a new ServeMux and register the /assign handler
