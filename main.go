@@ -36,17 +36,14 @@ type RemoveResponse struct {
 	Error  string     `json:"error"`
 }
 
-// Server represents the HTTP server.
 type Server struct {
 	handler *Handler
 }
 
-// NewServer creates a new server instance with the given handler.
 func NewServer(handler *Handler) *Server {
 	return &Server{handler: handler}
 }
 
-// StartServer starts the HTTP server.
 func (s *Server) StartServer(port string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/assign", s.handler.Assign)
@@ -62,7 +59,7 @@ func (s *Server) StartServer(port string) {
 func main() {
 	port := flag.String("port", "9000", "Port to listen on")
 	flag.Parse()
-	handler := &Handler{port: *port, tasks: make(map[string]chan bool)} // Replace with your handler implementation
+	handler := &Handler{port: *port, tasks: make(map[string]chan bool)}
 	server := NewServer(handler)
 	server.StartServer(":" + *port)
 }
