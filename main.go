@@ -13,27 +13,22 @@ const (
 	StatusCodeFailed  StatusCode = "FAILED"
 )
 
-type Input struct {
+type Params struct {
 	Message string `json:"message"`
 }
 
-type AssignRequest struct {
-	ID   string `json:"id"`
-	Data Input  `json:"data"`
+type Task struct {
+	ID     string `json:"id"`
+	Params Params `json:"params"`
 }
 
-type AssignResponse struct {
+type Tasks struct {
+	Tasks []Task `json:"tasks"`
+}
+
+type DaemonSetResponse struct {
 	Status StatusCode `json:"status"`
-	Error  string     `json:"error"`
-}
-
-type RemoveRequest struct {
-	ID string `json:"id"`
-}
-
-type RemoveResponse struct {
-	Status StatusCode `json:"status"`
-	Error  string     `json:"error"`
+	Error  string     `json:"error,omitempty"`
 }
 
 type Server struct {
@@ -46,9 +41,7 @@ func NewServer(handler *Handler) *Server {
 
 func (s *Server) StartServer(port string) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/assign", s.handler.Assign)
-	mux.HandleFunc("/remove", s.handler.Remove)
-	mux.HandleFunc("/health", s.handler.Health)
+	mux.HandleFunc("/tasks", s.handler.HandleTasks)
 
 	fmt.Printf("Server is running on port %s\n", port)
 	if err := http.ListenAndServe(port, mux); err != nil {

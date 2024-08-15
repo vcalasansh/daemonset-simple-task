@@ -12,7 +12,7 @@ import (
 
 type Handler struct {
 	port  string
-	tasks map[string](chan bool)
+	tasks map[string]chan bool
 	lock  sync.Mutex
 }
 
@@ -21,62 +21,90 @@ var (
 	outputPath string = "output.txt"
 )
 
+func (h *Handler) HandleTasks(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		h.Assign(w, r)
+	case http.MethodDelete:
+		h.Remove(w, r)
+	case http.MethodGet:
+		h.GetTasks(w, r)
+	default:
+		sendErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}
+
 func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
-	var input AssignRequest
-	if err := parseRequest(r, &input); err != nil {
+	var tasks Tasks
+	if err := parseRequest(r, &tasks); err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	quit := make(chan bool)
-	go h.startTask(input.Data.Message, input.ID, quit)
+	for _, task := range tasks.Tasks {
+		quit := make(chan bool)
+		go h.startTask(task.Params.Message, task.ID, quit)
 
-	h.lock.Lock()
-	h.tasks[input.ID] = quit
-	h.lock.Unlock()
+		h.lock.Lock()
+		h.tasks[task.ID] = quit
+		h.lock.Unlock()
+	}
 
-	sendSuccessResponse(w, AssignResponse{Status: StatusCodeSuccess})
+	sendSuccessResponse(w, DaemonSetResponse{Status: StatusCodeSuccess})
 }
 
 func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
-	var input RemoveRequest
-	if err := parseRequest(r, &input); err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, err.Error())
+	taskIds, ok := r.URL.Query()["taskIds"]
+	if !ok || len(taskIds) < 1 {
+		sendErrorResponse(w, http.StatusBadRequest, "Task IDs are required")
 		return
 	}
 
 	h.lock.Lock()
-	quit, ok := h.tasks[input.ID]
-	h.lock.Unlock()
-	if !ok {
-		sendErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("The task with ID %s does not exist!", input.ID))
-		return
+	defer h.lock.Unlock()
+
+	for _, taskId := range taskIds {
+		if quit, exists := h.tasks[taskId]; exists {
+			go func(quit chan bool) { quit <- true }(quit)
+			delete(h.tasks, taskId)
+		} else {
+			sendErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("The task with ID %s does not exist!", taskId))
+			return
+		}
 	}
 
-	go func() { quit <- true }()
-	h.lock.Lock()
-	delete(h.tasks, input.ID)
-	h.lock.Unlock()
+	sendSuccessResponse(w, DaemonSetResponse{Status: StatusCodeSuccess})
+}
 
-	sendSuccessResponse(w, RemoveResponse{Status: StatusCodeSuccess})
+func (h *Handler) GetTasks(w http.ResponseWriter, r *http.Request) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	var tasks []Task
+	for id := range h.tasks {
+		tasks = append(tasks, Task{ID: id})
+	}
+
+	response := Tasks{Tasks: tasks}
+	sendSuccessResponse(w, response)
 }
 
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	sendSuccessResponse(w, map[string]string{"status": string(StatusCodeSuccess)})
 }
 
-func (h *Handler) startTask(message, taskID string, quit chan bool) {
+func (h *Handler) startTask(message string, taskID string, quit chan bool) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-quit:
-			finalMessage := fmt.Sprintf("Stopping to print the message \"%s\" on server %s. Task will be removed [taskId=%s]", message, name, taskID)
+			finalMessage := fmt.Sprintf("Stopping to print the message \"%v\" on server %s. Task will be removed [taskId=%s]", message, name, taskID)
 			writeToFile(finalMessage)
 			return
 		case <-ticker.C:
-			finalMessage := fmt.Sprintf("%s : printed by server %s, running on %s [taskId=%s]", message, name, h.port, taskID)
+			finalMessage := fmt.Sprintf("%v : printed by server %s, running on %s [taskId=%s]", message, name, h.port, taskID)
 			writeToFile(finalMessage)
 		}
 	}
