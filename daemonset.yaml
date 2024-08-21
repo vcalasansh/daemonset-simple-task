@@ -1,0 +1,117 @@
+openapi: 3.0.0
+info:
+  title: Daemon Set API
+  description: API for Daemon Set plugin integration with Harness Runner
+  version: 1.0.0
+
+paths:
+  /assign:
+    post:
+      summary: Assign a new daemon task
+      operationId: assign
+      requestBody:
+        description: Request body for assigning a new daemon task
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+      responses:
+        '200':
+          description: Task assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignResponse'
+  /remove:
+    post:
+      summary: Remove an existing daemon task
+      operationId: remove
+      requestBody:
+        description: Request body for removing a daemon task
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveRequest'
+      responses:
+        '200':
+          description: Task removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemoveResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemoveResponse'
+  /health:
+    get:
+      summary: Check health of daemon set
+      operationId: health
+      responses:
+        '200':
+          description: Health status of the daemon set
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: Health status of the daemon set
+                    enum: ["OK", "FAILED"]
+
+components:
+  schemas:
+    AssignRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the daemon task
+        data:
+          type: object
+          description: Data necessary for running the daemon task
+      required:
+        - id
+        - data
+
+    AssignResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the assignment operation
+          enum: ["OK", "FAILED"]
+        error:
+          type: string
+          description: Error message if the operation failed
+
+    RemoveRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the daemon task to remove
+      required:
+        - id
+
+    RemoveResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the removal operation
+          enum: ["OK", "FAILED"]
+        error:
+          type: string
+          description: Error message if the operation failed
