@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,8 +43,13 @@ func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, task := range tasks.Tasks {
+		var params Params
+		if err := parseParams(&task.EncodedParams, &params); err != nil {
+			sendErrorResponse(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		quit := make(chan bool)
-		go h.startTask(task.Params.Message, task.ID, quit)
+		go h.startTask(params.Message, task.ID, quit)
 
 		h.lock.Lock()
 		h.tasks[task.ID] = quit
@@ -119,6 +125,21 @@ func parseRequest(r *http.Request, v interface{}) error {
 
 	if err := json.Unmarshal(body, v); err != nil {
 		return fmt.Errorf("invalid payload")
+	}
+	return nil
+}
+
+func parseParams(e *EncodedParams, p *Params) error {
+	// decode base64 data
+	decoded := make([]byte, base64.StdEncoding.DecodedLen(len(e.Base64Data)))
+	n, err := base64.StdEncoding.Decode(decoded, e.Base64Data)
+	if err != nil {
+		return fmt.Errorf("failed to decode EncodedParams.Base64Data with base64: %w", err)
+	}
+	decoded = decoded[:n]
+	// unmarshall decoded data into `Params` type
+	if err := json.Unmarshal(decoded, p); err != nil {
+		return fmt.Errorf("decoded value of EncodedParams.Base64Data is not valid Params type: %w", err)
 	}
 	return nil
 }

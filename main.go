@@ -17,9 +17,13 @@ type Params struct {
 	Message string `json:"message"`
 }
 
+type EncodedParams struct {
+	Base64Data []byte `json:"binary_data"`
+}
+
 type Task struct {
-	ID     string `json:"id"`
-	Params Params `json:"params"`
+	ID            string        `json:"id"`
+	EncodedParams EncodedParams `json:"params"`
 }
 
 type Tasks struct {
