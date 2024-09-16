@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sync"
-	"time"
 )
 
 type Handler struct {
@@ -17,11 +15,6 @@ type Handler struct {
 	lock  sync.Mutex
 }
 
-var (
-	name       string = "daemonset-simple-task"
-	outputPath string = "output.txt"
-)
-
 func (h *Handler) HandleTasks(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -29,7 +22,7 @@ func (h *Handler) HandleTasks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		h.Remove(w, r)
 	case http.MethodGet:
-		h.GetTasks(w, r)
+		h.Get(w, r)
 	default:
 		sendErrorResponse(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
@@ -49,71 +42,53 @@ func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		quit := make(chan bool)
-		go h.startTask(params.Message, task.ID, quit)
+		go startTask(task.ID, params, quit)
 
 		h.lock.Lock()
 		h.tasks[task.ID] = quit
 		h.lock.Unlock()
 	}
 
-	sendSuccessResponse(w, DaemonSetResponse{Status: StatusCodeSuccess})
+	sendSuccessResponse(w, Response{TasksMetadata: h.getTasksMetadata()})
 }
 
 func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 	taskIds, ok := r.URL.Query()["taskIds"]
 	if !ok || len(taskIds) < 1 {
-		sendErrorResponse(w, http.StatusBadRequest, "Task IDs are required")
+		sendErrorResponse(w, http.StatusBadRequest, "task IDs are required")
 		return
 	}
 
 	h.lock.Lock()
-	defer h.lock.Unlock()
 
 	for _, taskId := range taskIds {
 		if quit, exists := h.tasks[taskId]; exists {
 			go func(quit chan bool) { quit <- true }(quit)
 			delete(h.tasks, taskId)
 		} else {
-			sendErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("The task with ID %s does not exist!", taskId))
+			sendErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("the task with ID %s does not exist!", taskId))
 			return
 		}
 	}
 
-	sendSuccessResponse(w, DaemonSetResponse{Status: StatusCodeSuccess})
+	h.lock.Unlock()
+
+	sendSuccessResponse(w, Response{TasksMetadata: h.getTasksMetadata()})
 }
 
-func (h *Handler) GetTasks(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
+	sendSuccessResponse(w, Response{TasksMetadata: h.getTasksMetadata()})
+}
+
+func (h *Handler) getTasksMetadata() TasksMetadata {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
-	var tasks []Task
+	var tasksMetadata TasksMetadata
 	for id := range h.tasks {
-		tasks = append(tasks, Task{ID: id})
+		tasksMetadata = append(tasksMetadata, TaskMetadata{ID: id})
 	}
-
-	response := Tasks{Tasks: tasks}
-	sendSuccessResponse(w, response)
-}
-
-func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
-	sendSuccessResponse(w, map[string]string{"status": string(StatusCodeSuccess)})
-}
-
-func (h *Handler) startTask(message string, taskID string, quit chan bool) {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-quit:
-			finalMessage := fmt.Sprintf("Stopping to print the message \"%v\" on server %s. Task will be removed [taskId=%s]", message, name, taskID)
-			writeToFile(finalMessage)
-			return
-		case <-ticker.C:
-			finalMessage := fmt.Sprintf("%v : printed by server %s, running on %s [taskId=%s]", message, name, h.port, taskID)
-			writeToFile(finalMessage)
-		}
-	}
+	return tasksMetadata
 }
 
 func parseRequest(r *http.Request, v interface{}) error {
@@ -144,28 +119,14 @@ func parseParams(e *EncodedParams, p *Params) error {
 	return nil
 }
 
-func sendErrorResponse(w http.ResponseWriter, status int, errMsg string) {
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": string(StatusCodeFailed),
-		"error":  errMsg,
-	})
-}
-
 func sendSuccessResponse(w http.ResponseWriter, response interface{}) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
 
-func writeToFile(message string) {
-	file, err := os.OpenFile(outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Printf("Error opening or creating the file: %v\n", err)
-		return
-	}
-	defer file.Close()
-
-	if _, err := file.WriteString(message + "\n"); err != nil {
-		fmt.Printf("Error writing to the file: %v\n", err)
-	}
+func sendErrorResponse(w http.ResponseWriter, status int, errMsg string) {
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{
+		"error": errMsg,
+	})
 }

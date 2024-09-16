@@ -1,4 +1,0 @@
-task:
-  run:
-    go:
-      module: example.com

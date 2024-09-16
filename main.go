@@ -1,39 +1,10 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"net/http"
+	"os"
 )
-
-type StatusCode string
-
-const (
-	StatusCodeSuccess StatusCode = "OK"
-	StatusCodeFailed  StatusCode = "FAILED"
-)
-
-type Params struct {
-	Message string `json:"message"`
-}
-
-type EncodedParams struct {
-	Base64Data []byte `json:"binary_data"`
-}
-
-type Task struct {
-	ID            string        `json:"id"`
-	EncodedParams EncodedParams `json:"params"`
-}
-
-type Tasks struct {
-	Tasks []Task `json:"tasks"`
-}
-
-type DaemonSetResponse struct {
-	Status StatusCode `json:"status"`
-	Error  string     `json:"error,omitempty"`
-}
 
 type Server struct {
 	handler *Handler
@@ -47,16 +18,19 @@ func (s *Server) StartServer(port string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/tasks", s.handler.HandleTasks)
 
-	fmt.Printf("Server is running on port %s\n", port)
+	fmt.Printf("daemon server is running on port %s\n", port)
 	if err := http.ListenAndServe(port, mux); err != nil {
-		fmt.Printf("Error starting server: %v", err)
+		fmt.Printf("error starting server: %v", err)
 	}
 }
 
 func main() {
-	port := flag.String("port", "9000", "Port to listen on")
-	flag.Parse()
-	handler := &Handler{port: *port, tasks: make(map[string]chan bool)}
+	port := os.Getenv("DAEMON_SERVER_PORT")
+	if port == "" {
+		fmt.Printf("environment variable DAEMON_SERVER_PORT is not set. Cannot start server")
+		return
+	}
+	handler := &Handler{port: port, tasks: make(map[string]chan bool)}
 	server := NewServer(handler)
-	server.StartServer(":" + *port)
+	server.StartServer(":" + port)
 }
