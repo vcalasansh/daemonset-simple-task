@@ -66,6 +66,7 @@ func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 			go func(quit chan bool) { quit <- true }(quit)
 			delete(h.tasks, taskId)
 		} else {
+			h.lock.Unlock()
 			sendErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("the task with ID %s does not exist!", taskId))
 			return
 		}
