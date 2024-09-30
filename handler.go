@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"sync"
+
+	"github.com/drone/go-task/task/expression"
 )
 
 type Handler struct {
@@ -37,7 +39,7 @@ func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
 
 	for _, task := range tasks.Tasks {
 		var params Params
-		if err := parseParams(&task.EncodedParams, &params); err != nil {
+		if err := parseParams(&task.EncodedParams, &params, task.Secrets); err != nil {
 			sendErrorResponse(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -105,7 +107,7 @@ func parseRequest(r *http.Request, v interface{}) error {
 	return nil
 }
 
-func parseParams(e *EncodedParams, p *Params) error {
+func parseParams(e *EncodedParams, p *Params, s map[string]string) error {
 	// decode base64 data
 	decoded := make([]byte, base64.StdEncoding.DecodedLen(len(e.Base64Data)))
 	n, err := base64.StdEncoding.Decode(decoded, e.Base64Data)
@@ -113,8 +115,16 @@ func parseParams(e *EncodedParams, p *Params) error {
 		return fmt.Errorf("failed to decode EncodedParams.Base64Data with base64: %w", err)
 	}
 	decoded = decoded[:n]
+
+	// resolve expressions
+	resolver := expression.New(s)
+	resolved, err := resolver.Resolve(decoded)
+	if err != nil {
+		return fmt.Errorf("failed to resolve expressions in decoded EncodedParams.Base64Data: %w", err)
+	}
+
 	// unmarshall decoded data into `Params` type
-	if err := json.Unmarshal(decoded, p); err != nil {
+	if err := json.Unmarshal(resolved, p); err != nil {
 		return fmt.Errorf("decoded value of EncodedParams.Base64Data is not valid Params type: %w", err)
 	}
 	return nil

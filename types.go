@@ -6,8 +6,9 @@ type (
 	}
 
 	Task struct {
-		ID            string        `json:"id"`
-		EncodedParams EncodedParams `json:"params"`
+		ID            string            `json:"id"`
+		EncodedParams EncodedParams     `json:"params"`
+		Secrets       map[string]string `json:"secrets"`
 	}
 
 	Tasks struct {
